@@ -2,7 +2,7 @@ from flask import Blueprint, request, send_file, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from encrypt_utils import encrypt_image, decrypt_image
 from models import db, EncryptedImage, User
-import magic
+import filetype
 import io
 
 routes_bp = Blueprint('routes', __name__, url_prefix='/api')
@@ -58,15 +58,15 @@ def decrypt():
         decrypted_data = decrypt_image(encrypted_data, key, shift)
 
         # Cek apakah hasil dekripsi adalah gambar
-        mime_type = magic.from_buffer(decrypted_data, mime=True)
-        if not mime_type.startswith("image/"):
+        kind = filetype.guess(decrypted_data)
+        if not kind or not kind.mime.startswith("image/"):
             return jsonify({"error": "Key salah atau hasil dekripsi bukan gambar"}), 400
 
         return send_file(
             io.BytesIO(decrypted_data),
-            mimetype=mime_type,
+            mimetype=kind.mime,
             as_attachment=True,
-            download_name='decrypted.jpg'
+            download_name=f'decrypted.{kind.extension}'
         )
     except Exception as e:
         return jsonify({"error": str(e)}), 400
