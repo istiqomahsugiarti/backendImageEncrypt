@@ -17,7 +17,7 @@ app.config.from_object(Config)
 # Setup extensions
 db.init_app(app)
 jwt = JWTManager(app)
-CORS(app, origins=["https://picrypt.vercel.app"], supports_credentials=True)
+CORS(app, origins=["https://picrypt.vercel.app", "http://localhost:3000"], supports_credentials=True)
 
 # Register blueprints
 app.register_blueprint(auth_bp)

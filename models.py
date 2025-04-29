@@ -4,7 +4,7 @@ from datetime import datetime
 db = SQLAlchemy()
 
 class User(db.Model):
-    __tablename__ = 'users'  # <- nama tabel spesifik di MySQL
+    __tablename__ = 'users'
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(100), nullable=False)
@@ -12,13 +12,13 @@ class User(db.Model):
     password = db.Column(db.Text, nullable=False)
     role = db.Column(db.Enum('admin', 'user'), default='user', nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    images = db.relationship('EncryptedImage', backref='user', lazy=True)
 
-class EncryptedImage(db.Model):
-    __tablename__ = 'encrypted_images'  # <- nama tabel spesifik di MySQL
+class History(db.Model):
+    __tablename__ = 'history'
 
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    filename = db.Column(db.String(255))
-    encrypted_data = db.Column(db.LargeBinary, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    id_user = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    file_name = db.Column(db.String(100), nullable=False)
+    action = db.Column(db.String(15), nullable=False)
+    created_at = db.Column(db.TIMESTAMP, default=datetime.utcnow, nullable=False)
+    key_image = db.Column(db.String(100), nullable=True)
