@@ -1,7 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-
-db = SQLAlchemy()
+from extensions import db
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -12,6 +11,16 @@ class User(db.Model):
     password = db.Column(db.Text, nullable=False)
     role = db.Column(db.Enum('admin', 'user'), default='user', nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_blocked    = db.Column(db.Boolean, default=False, nullable=False)
+    blocked_at    = db.Column(db.DateTime)
+    block_until   = db.Column(db.DateTime)
+    block_reason  = db.Column(db.Text)
+    failed_attempts = db.Column(db.Integer, default=0)
+    
+    login_failed_attempts = db.Column(db.Integer, default=0)
+    login_blocked_at = db.Column(db.DateTime)
+    login_block_until = db.Column(db.DateTime)
+    login_is_blocked = db.Column(db.Boolean, default=False)
 
 class History(db.Model):
     __tablename__ = 'history'
@@ -22,3 +31,4 @@ class History(db.Model):
     action = db.Column(db.String(15), nullable=False)
     created_at = db.Column(db.TIMESTAMP, default=datetime.utcnow, nullable=False)
     key_image = db.Column(db.String(100), nullable=True)
+    
