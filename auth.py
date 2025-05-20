@@ -99,7 +99,7 @@ def login():
         'token': access_token,
         'role': user.role,
         'username': user.username,
-        'user_id': user.id
+        'user_email': user.email
     }), 200
 
 @auth_bp.route('/api/login-block-status', methods=['GET'])
@@ -125,9 +125,10 @@ def login_block_status():
         'failed_attempts': user.login_failed_attempts
     }), 200
 
-@auth_bp.route('/api/user/<int:user_id>', methods=['GET'])
+@auth_bp.route('/api/getcurrentuser', methods=['GET'])
 @jwt_required()
-def get_user(user_id):
+def get_user():
+    user_id = int(get_jwt_identity())
     user = User.query.get(user_id)
     if not user:
         return jsonify({'error': 'User tidak ditemukan'}), 404

@@ -31,4 +31,10 @@ class History(db.Model):
     action = db.Column(db.String(15), nullable=False)
     created_at = db.Column(db.TIMESTAMP, default=datetime.utcnow, nullable=False)
     key_image = db.Column(db.String(100), nullable=True)
-    
+
+class Pertanyaan(db.Model):
+    __tablename__ = 'faq'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    pertanyaan = db.Column(db.Text, nullable=False)
+    jawaban = db.Column(db.Text, nullable=False)

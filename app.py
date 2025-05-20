@@ -7,6 +7,8 @@ from extensions import db, jwt, mail
 from auth import auth_bp
 from routes import routes_bp
 from flask_mail import Mail
+from user_management import user_mgmt_bp
+from faq_managament import faq_bp
 
 
 
@@ -27,6 +29,8 @@ CORS(app, origins=["https://picrypt.vercel.app", "http://localhost:3000"], suppo
 # Register blueprints
 app.register_blueprint(auth_bp)
 app.register_blueprint(routes_bp)
+app.register_blueprint(user_mgmt_bp)
+app.register_blueprint(faq_bp)
 
 # Create tables (jika belum ada)
 with app.app_context():
