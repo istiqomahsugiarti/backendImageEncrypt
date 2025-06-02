@@ -20,17 +20,21 @@ def encrypt():
     try:
         file = request.files['file']
         vigenere_key = request.form['key']
+        # ➡️ baca mode: basic (default) atau advanced
+        method = request.form.get('method', 'basic').lower()
         user_id = int(get_jwt_identity())
 
         caesar_shift = sum(bytearray(vigenere_key.encode()))
         image_data = file.read()
-        encrypted_data = encrypt_image(image_data, vigenere_key, caesar_shift)
 
-        # Simpan ke history
+        # ➡️ oper ke util: sekarang ada arg method
+        encrypted_data = encrypt_image(image_data, vigenere_key, caesar_shift, method)
+
+        # simpan history...
         history_entry = History(
             id_user=user_id,
             file_name=file.filename,
-            action='encrypt',
+            action=f'encrypt-{method}',  # misal simpan 'encrypt-basic' / 'encrypt-advanced'
             key_image=vigenere_key
         )
         db.session.add(history_entry)
@@ -40,7 +44,82 @@ def encrypt():
             io.BytesIO(encrypted_data),
             mimetype='application/octet-stream',
             as_attachment=True,
-            download_name='encrypted.img'
+            download_name='encrypted.jpg'
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@routes_bp.route('/decrypt', methods=['POST'])
+@jwt_required()
+def decrypt():
+    try:
+        file = request.files["file"]
+        key = request.form["key"]
+        # ➡️ baca mode juga di decrypt
+        method = request.form.get('method', 'basic').lower()
+        user_id = int(get_jwt_identity())
+
+        # Ambil user dari database
+        user = User.query.get(user_id)
+
+        # cek blokir...
+        if user.block_until and user.block_until > datetime.utcnow():
+            return jsonify({
+                "error": "Akun Anda diblokir sementara karena terlalu banyak kesalahan. Coba lagi nanti.",
+                "block_until": user.block_until.strftime("%Y-%m-%d %H:%M:%S")
+            }), 403
+        
+        shift = sum(bytearray(key.encode()))
+        encrypted_data = file.read()
+
+        # ➡️ panggil decrypt_image dengan mode
+        decrypted_data = decrypt_image(encrypted_data, key, shift, method)
+
+        kind = filetype.guess(decrypted_data)
+        
+        # Jika gagal dekripsi
+        if not kind or not kind.mime.startswith("image/"):
+            user.failed_attempts += 1
+
+            # Blokir jika gagal >= 5x
+            if user.failed_attempts >= 5:
+                user.is_blocked = True
+                # Gunakan waktu Indonesia (UTC+7)
+                waktu_sekarang = datetime.utcnow() + timedelta(hours=7)
+                user.blocked_at = waktu_sekarang
+                user.block_until = waktu_sekarang + timedelta(minutes=5)
+                user.block_reason = "Terlalu banyak percobaan dekripsi yang gagal"
+                
+                # Kirim email peringatan
+                send_decrypt_warning_email(user.email, user.username)
+            
+            db.session.commit()
+            return jsonify({"error": "Key salah atau hasil dekripsi bukan gambar"}), 400
+
+        # Jika berhasil, reset semua info blokir
+        user.failed_attempts = 0
+        user.is_blocked = False
+        user.blocked_at = None
+        user.block_until = None
+        user.block_reason = None
+        db.session.commit()
+        # reset block info, simpan history
+        history_entry = History(
+            id_user=user_id,
+            file_name=file.filename,
+            action=f'decrypt-{method}',
+            key_image=key
+        )
+        db.session.add(history_entry)
+        db.session.commit()
+
+        return send_file(
+            io.BytesIO(decrypted_data),
+            mimetype=kind.mime,
+            as_attachment=True,
+            download_name=f'decrypted-{method}.{kind.extension}'
         )
 
     except Exception as e:
@@ -128,79 +207,6 @@ Tim Keamanan PIcrypt
         html=html_content
     )
     mail.send(msg)
-
-@routes_bp.route('/decrypt', methods=['POST'])
-@jwt_required()
-def decrypt():
-    try:
-        file = request.files["file"]
-        key = request.form["key"]
-        user_id = int(get_jwt_identity())
-
-        # Ambil user dari database
-        user = User.query.get(user_id)
-
-        # Cek apakah sedang diblokir
-        if user.block_until and user.block_until > datetime.utcnow():
-            return jsonify({
-                "error": "Akun Anda diblokir sementara karena terlalu banyak kesalahan. Coba lagi nanti.",
-                "block_until": user.block_until.strftime("%Y-%m-%d %H:%M:%S")
-            }), 403
-
-        shift = sum(bytearray(key.encode()))
-        encrypted_data = file.read()
-
-        decrypted_data = decrypt_image(encrypted_data, key, shift)
-
-        kind = filetype.guess(decrypted_data)
-
-        # Jika gagal dekripsi
-        if not kind or not kind.mime.startswith("image/"):
-            user.failed_attempts += 1
-
-            # Blokir jika gagal >= 5x
-            if user.failed_attempts >= 5:
-                user.is_blocked = True
-                # Gunakan waktu Indonesia (UTC+7)
-                waktu_sekarang = datetime.utcnow() + timedelta(hours=7)
-                user.blocked_at = waktu_sekarang
-                user.block_until = waktu_sekarang + timedelta(minutes=5)
-                user.block_reason = "Terlalu banyak percobaan dekripsi yang gagal"
-                
-                # Kirim email peringatan
-                send_decrypt_warning_email(user.email, user.username)
-            
-            db.session.commit()
-
-            return jsonify({"error": "Key salah atau hasil dekripsi bukan gambar"}), 400
-
-        # Jika berhasil, reset semua info blokir
-        user.failed_attempts = 0
-        user.is_blocked = False
-        user.blocked_at = None
-        user.block_until = None
-        user.block_reason = None
-        db.session.commit()
-
-        # Simpan ke history
-        history_entry = History(
-            id_user=user_id,
-            file_name=file.filename,
-            action='decrypt',
-            key_image=key
-        )
-        db.session.add(history_entry)
-        db.session.commit()
-
-        return send_file(
-            io.BytesIO(decrypted_data),
-            mimetype=kind.mime,
-            as_attachment=True,
-            download_name=f'decrypted.{kind.extension}'
-        )
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
 
 @routes_bp.route('/history', methods=['GET'])
 @jwt_required()

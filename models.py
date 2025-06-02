@@ -38,3 +38,17 @@ class Pertanyaan(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     pertanyaan = db.Column(db.Text, nullable=False)
     jawaban = db.Column(db.Text, nullable=False)
+
+
+class OtpRequest(db.Model):
+    __tablename__ = 'otp_requests'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    otp_code = db.Column(db.String(6), nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    user = db.relationship('User', backref=db.backref('otp_requests', lazy=True))
+
+# ───────────────────────────────────────────────────────────────────────────── #

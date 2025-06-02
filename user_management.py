@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
-from models import User
+from models import User, History
 from extensions import db
 
 user_mgmt_bp = Blueprint('user_mgmt', __name__)
@@ -63,3 +63,41 @@ def delete_user(user_id):
     db.session.delete(user)
     db.session.commit()
     return jsonify({'message': 'User berhasil dihapus'}), 200
+
+@user_mgmt_bp.route('/api/users/dashboard', methods=['GET'])
+@jwt_required()
+def get_dashboard_data():
+    claims = get_jwt()
+    if claims.get('role') != 'admin':
+        return jsonify({'error': 'Akses ditolak, hanya admin yang dapat melihat data dashboard.'}), 403
+    
+    # Mengambil semua user kecuali admin
+    users = User.query.filter(User.role != 'admin').all()
+    
+    # Menghitung total percobaan login dan dekripsi yang gagal
+    total_login_failed = sum(user.login_failed_attempts for user in users)
+    total_decrypt_failed = sum(user.failed_attempts for user in users)
+    
+    # Mengambil semua user (non-admin) dan mengurutkan berdasarkan created_at
+    users_created = User.query.filter(User.role != 'admin').order_by(User.created_at.desc()).all()
+    
+    # Membuat list untuk menyimpan data user yang akan direturn
+    user_list = []
+    for user in users_created:
+        user_data = {
+            'username': user.username,
+            'email': user.email,
+            'created_at': user.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        }
+        user_list.append(user_data)
+    
+    # Mengambil total history
+    total_history = History.query.count()
+    
+    return jsonify({
+        'total_login_failed': total_login_failed,
+        'total_decrypt_failed': total_decrypt_failed,
+        'users': user_list,
+        'total_users': len(user_list),
+        'total_history': total_history
+    }), 200

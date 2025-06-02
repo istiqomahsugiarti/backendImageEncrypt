@@ -2,27 +2,29 @@ from flask import Blueprint, request, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from extensions import db,mail 
-from models import User
+from models import User, OtpRequest
 from flask import render_template_string
 from datetime import datetime, timedelta
 from flask_mail import Message
-
+import random
 
 auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/api/register', methods=['POST'])
-def register():
+
+def register():   
+    
+    
     data = request.get_json()
     username = data.get('username')
     email = data.get('email')
     password = data.get('password')
-
     if not username or not email or not password:
         return jsonify({'error': 'Semua field wajib diisi'}), 400
 
     # Cek apakah user sudah ada
-    if User.query.filter((User.email == email) | (User.username == username)).first():
-        return jsonify({'error': 'Username atau email sudah terdaftar'}), 400
+    if User.query.filter(User.email == email).first():
+        return jsonify({'error': 'Email sudah terdaftar'}), 400
 
     hashed_password = generate_password_hash(password)
 
@@ -224,3 +226,141 @@ Tim Keamanan PIcrypt
         html=html_content
     )
     mail.send(msg)
+    
+
+@auth_bp.route('/api/send-otp', methods=['POST'])
+def send_otp():
+    """
+    Endpoint untuk generate OTP (6 digit) dan simpan di tabel otp_requests.
+    Request JSON: { "email": "<email_user>" }
+    """
+    data = request.get_json() or {}
+    email = data.get('email')
+    if not email:
+        return jsonify({'error': 'Email wajib diisi'}), 400
+
+    # Cari user berdasarkan email
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        # Untuk alasan keamanan: meski user tidak ditemukan, 
+        # tetap kembalikan 200 agar attacker tidak bisa tau user terdaftar atau tidak.
+        return jsonify({'message': 'OTP telah dikirim jika email terdaftar'}), 200
+
+    # 1) Generate OTP 6 digit (string)
+    otp_code = f"{random.randint(0, 999999):06d}"
+    # 2) Expire waktu 10 menit sejak sekarang (UTC)
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
+
+    # 3) Simpan ke tabel otp_requests
+    new_otp = OtpRequest(
+        user_id = user.id,
+        otp_code = otp_code,
+        expires_at = expires_at,
+        used = False
+    )
+    db.session.add(new_otp)
+    db.session.commit()
+
+    # 4) Siapkan isi email (HTML + Plain)
+    html_content = render_template_string('''
+    <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; background: #f8f9fa; padding: 20px; }
+          .container { background: #fff; padding: 20px; border-radius: 8px; max-width: 600px; margin: auto; }
+          h2 { color: #333; }
+          .otp-code { font-size: 32px; font-weight: bold; margin: 20px 0; }
+          .footer { font-size: 12px; color: #666; margin-top: 30px; text-align: center; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h2>Reset Password Anda</h2>
+          <p>Halo <strong>{{ username }}</strong>,</p>
+          <p>Anda (atau seseorang) telah meminta untuk mereset kata sandi akun Anda. 
+             Gunakan kode OTP di bawah ini untuk melanjutkan proses reset password. 
+             Kode ini akan kedaluwarsa dalam <strong>10 menit</strong>:</p>
+          <div class="otp-code">{{ otp_code }}</div>
+          <p>Jika Anda tidak merasa meminta reset password, silakan abaikan email ini.</p>
+          <div class="footer">
+            &copy; {{ year }} Aplikasi Anda. Semua hak cipta dilindungi.
+          </div>
+        </div>
+      </body>
+    </html>
+    ''',
+    username=user.username,
+    otp_code=otp_code,
+    year=datetime.utcnow().year)
+
+    plain_text = f"""
+    Reset Password Anda
+
+    Halo {user.username},
+
+    Berikut kode OTP untuk mereset password: {otp_code}
+
+    OTP ini akan kedaluwarsa dalam 10 menit.
+
+    Jika Anda tidak merasa meminta reset password, abaikan pesan ini.
+    """
+
+    # 5) Kirim email
+    msg = Message(
+        subject='[Aplikasi Anda] Kode OTP Reset Password',
+        recipients=[email],
+        body=plain_text,
+        html=html_content
+    )
+    mail.send(msg)
+
+    return jsonify({'message': 'OTP telah dikirim jika email terdaftar'}), 200
+
+
+@auth_bp.route('/api/verify-otp', methods=['POST'])
+def verify_otp():
+    """
+    Endpoint untuk verifikasi OTP dan mengganti password.
+    Request JSON: 
+      {
+        "email": "<email_user>",
+        "otp": "<kode_otp>",
+        "new_password": "<password_baru>"
+      }
+    """
+    data = request.get_json() or {}
+    email = data.get('email')
+    otp = data.get('otp')
+    new_password = data.get('new_password')
+
+    # Validasi input
+    if not (email and otp and new_password):
+        return jsonify({'error': 'Email, OTP, dan password baru wajib diisi'}), 400
+
+    # 1) Cari user berdasarkan email
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({'error': 'Email atau OTP tidak valid'}), 400
+
+    # 2) Cari record OTP paling baru untuk user ini dengan kode yang cocok, belum expired, dan belum digunakan
+    now = datetime.utcnow()
+    otp_record = (
+        OtpRequest.query
+        .filter_by(user_id=user.id, otp_code=otp, used=False)
+        .filter(OtpRequest.expires_at >= now)
+        .order_by(OtpRequest.created_at.desc())
+        .first()
+    )
+
+    if not otp_record:
+        return jsonify({'error': 'OTP tidak valid atau sudah kedaluwarsa'}), 400
+
+    # 3) Semua valid → hash password baru, simpan ke tabel users
+    hashed_pw = generate_password_hash(new_password)
+    user.password = hashed_pw
+
+    # 4) Hapus OTP yang sudah digunakan
+    db.session.delete(otp_record)
+
+    db.session.commit()
+    return jsonify({'message': 'Password berhasil direset'}), 200
