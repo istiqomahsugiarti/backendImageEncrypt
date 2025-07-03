@@ -24,7 +24,7 @@ app.config.from_object(Config)
 db.init_app(app)
 jwt.init_app(app)
 mail.init_app(app)
-CORS(app, origins=["https://picrypt.vercel.app", "http://localhost:3000"], supports_credentials=True)
+CORS(app, origins=["https://picrypt.vercel.app","https://picrypt.site", "http://localhost:3000"], supports_credentials=True)
 
 # Register blueprints
 app.register_blueprint(auth_bp)
